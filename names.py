@@ -1,66 +1,119 @@
+#!/usr/bin/env python3
+"""Allows input of names, timed, which get saved to a CSV file.
+Name
+Seconds: Seconds to come up with the current name
+MinuteIndex: Point at which the current name came up, in minutes
+"""
+import argparse
 import csv
-import time
 import os
+import time
 
-file_name = "names.csv"
 
-# Check if the chosen file name exists
-while os.path.exists(file_name):
-    user_choice = input(f"The file {file_name} already exists. Do you want to overwrite it? (y/n): ").lower()
+SAVE_FILE = 'listofnames.csv'
+TIME_LIMIT = 10  # minutes
+QUIT = '/x'
 
-    if user_choice == 'y':
-        break
 
-    elif user_choice == 'n':
-        file_name = input("Enter a new filename (or press Enter to exit): ").strip()
-        if not file_name:
-            exit()
+def parse_args():
+    """Parse user arguments and return as parser object.
 
-    else:
-        print("Invalid choice. Please enter 'y' or 'n'.")
+    Returns:
+        Parser object with arguments as attributes.
+    """
+    parser = argparse.ArgumentParser(description='Nombres.')
+    parser.add_argument(
+        '-p', '--pressure', action='store_true',
+        help='Pressure mode; shows elapsed times in seconds.')
+    parser.add_argument(
+        '-s', '--save_file', default=SAVE_FILE,
+        help='Name of CSV file into which to save names and times.')
+    parser.add_argument(
+        '-t', '--time_limit', default=TIME_LIMIT, type=int,
+        help='Number of minutes to allow input.')
+    args = parser.parse_args()
+    return args
 
-# Create or open a CSV file for writing
-csv_file = open(file_name, mode='w', newline='')
-csv_writer = csv.writer(csv_file)
 
-# Write the header row
-csv_writer.writerow(["Name", "Elapsed Time (seconds)"])
+def validate_file(file_name=SAVE_FILE):
+    """Ensure that the file name desired should be used.
 
-# Get the start time when the program is initially run
-start_time = time.time()
-last_minute_checked = 0
-name_count = 0
+    Args:
+        file_name: File name desired.
 
-def save_name(name):
-    # Calculate the elapsed time since the program started in minutes and seconds
-    elapsed_time = round(time.time() - start_time, 2)
-    minutes, seconds = divmod(int(elapsed_time), 60)
-
-    # Write the name and elapsed time to the CSV file
-    csv_writer.writerow([name, elapsed_time])
-
-    # Print time elapsed message, if a minute barrier is passed
-    global last_minute_checked
-    if minutes > last_minute_checked:
-        last_minute_checked = minutes
-        print(f"{minutes} minute{'s' if minutes > 1 else ''} elapsed")
-
-print("Enter a name (/x to exit)")
-
-try:
-    while True:
-        user_input = input("name: ")
-
-        if user_input == "/x":
+    Returns:
+        file_name: Final file name to be used (may be same as input).
+    """
+    while os.path.exists(file_name):
+        print(f'File "{file_name}" exists.')
+        response = input('Do you wish to over-write the file? [y/N] ')
+        if response.strip().lower().startswith('y'):
             break
+        file_name = ''
+        while file_name == '':
+            file_name = input('Name of file to save to: ').strip()
+            if file_name and not file_name.lower().endswith('.csv'):
+                file_name += '.csv'
+        print(f'New file name: "{file_name}"')
+    return file_name
 
-        name_count += 1
-        save_name(user_input)
 
-except KeyboardInterrupt:
-    print('')
+def save_data(data, save_file):
+    """Save the list (dictionary) of names to a CSV file all at once.
 
-# Close the CSV file
-csv_file.close()
+    Args:
+        data: Dictionary of names; names[name] = (seconds, total_time)
+        save_file: Name of file into which to save data.
+    """
+    with open(save_file, 'w', encoding='utf-8') as file_handle:
+        csv_writer = csv.writer(file_handle)
+        csv_writer.writerow(['Name', 'Seconds', 'MinuteIndex'])
+        for name, values in data.items():
+            csv_writer.writerow([name, values[0], values[1]])
 
-print(f"{name_count} names saved to {file_name}")
+
+def main():
+    """Does the work.
+    """
+    names = {}  # unique names only
+    save_file = validate_file(ARGS.save_file)
+
+    time_total = minute = 0  # set timers to 0
+    keep_going = True
+    input('Press <enter> to start typing names.')
+    time_previous = time.time()
+    while keep_going:
+        name = ''
+        while name == '':
+            try:
+                name = input(f'Name ("{QUIT}" to quit): ').strip()
+            except KeyboardInterrupt:
+                name = QUIT
+                print()
+        if name == QUIT:
+            break
+        name = name.title()
+
+        time_now = time.time()  # seconds
+        time_elapsed = time_now - time_previous  # time for current name
+        time_total += time_elapsed  # time since start of program
+        minutes_total = time_total / 60
+        time_previous = time_now
+        if ARGS.pressure:
+            print(f'  ## {minutes_total:.2f} minutes have elapsed.')
+        elif int(minutes_total) > minute:
+            minute = int(minutes_total)
+            print(f'  ## {minute} minute{"s" if minute != 1 else ""} elapsed.')
+        if name in names:
+            print(f'  ## ## "{name}" was already entered.')
+            time_elapsed += names[name][0]
+        names[name] = time_elapsed, minutes_total
+
+        keep_going = minutes_total < ARGS.time_limit
+    save_data(names, save_file)
+    print(f'Time is up! {len(names)} names entered.')
+
+
+if __name__ == '__main__':
+    ARGS = parse_args()
+    main()
